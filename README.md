@@ -9,11 +9,11 @@ requires:
 
 features:
 
-* csv: params, status, results are contained in a simple csv file
+* csv: params, status, results are contained in a csv file
 * multi-processing: distributes isolated pytorch processes among gpus / cpus
-* timestamps: isolates experiments in timestamped output directories
-* logging: isolated logging facility per run
-* single-file: self-contained within a single file for simple reproducibility
+* timestamps: isolates jobs in timestamped output directories
+* logging: isolates logging facility per job
+* single-file: self-contained within a single file for reproducibility
 
 setup:
 1. fill in TODOs with your training code
