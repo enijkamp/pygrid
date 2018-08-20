@@ -1,6 +1,6 @@
 # pygrid
 
-Multi-gpu / cpu grid search for pytorch.
+Minimalistic multi-gpu / cpu grid search for pytorch.
 
 requires:
 
