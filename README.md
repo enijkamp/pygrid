@@ -16,6 +16,6 @@ features:
 * single-file: self-contained within a single file for reproducibility
 
 setup:
-1. fill in TODOs with your training code
+1. fill in TODOs with your training code and list of parameters
 2. set list of gpu / cpu device ids
 3. run
