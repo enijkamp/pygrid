@@ -227,7 +227,7 @@ def cast_str(value):
     if is_float(value):
         return float(value)
     if is_bool(value):
-        return bool(value)
+        return value.upper() == 'TRUE'
     return value
 
 
