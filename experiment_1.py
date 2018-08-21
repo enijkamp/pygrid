@@ -265,6 +265,7 @@ def reset_job_status(opts_list):
     for opt in opts_list:
         if opt['status'] == 'running':
             opt['status'] = 'open'
+    return opts_list
 
 
 def create_opts():
@@ -310,8 +311,7 @@ def main(device_ids):
     logger = setup_logging('main', output_dir, console=True)
     logger.info('available devices {}'.format(device_ids))
     opt_list = read_opts(get_opts_filename())
-    reset_job_status(opt_list)
-    write_opts(opt_list)
+    write_opts(reset_job_status(opt_list))
     run_jobs(logger, get_exp_id(), opt_list, output_dir, workers=len(device_ids))
     shutil.copyfile(get_opts_filename(), os.path.join(output_dir, get_opts_filename()))
     logger.info('done')
