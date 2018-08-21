@@ -27,6 +27,7 @@ def train(opt_override, output_dir, logger, return_dict):
     parser.add_argument('--device', type=int, default=0, metavar='S', help='device id, default=%(default)s')
 
     parser.add_argument('--param1', type=float, default=1.0, help='parameter 1, default=%(default)s')
+    parser.add_argument('--param2', type=bool, default=True, help='parameter 2, default=%(default)s')
 
     # preamble
     opt = parser.parse_args()
@@ -40,7 +41,7 @@ def train(opt_override, output_dir, logger, return_dict):
     # run
     # TODO add your training loop here
     with open(os.path.join(output_dir, 'result.txt'), 'w') as f:
-        print('param1={}'.format(opt.param1), file=f)
+        print('param1={}, param2={}'.format(opt.param1, opt.param2), file=f)
 
     x = torch.tensor(opt.param1, requires_grad=True).to(device)
     metric = torch.autograd.grad(torch.sin(x), x)[0].item()
@@ -200,27 +201,33 @@ def run_jobs(logger, exp_id, opt_list, output_dir, workers):
                 update_job_status(opt['job_id'], 'fail')
 
 
-def is_int(n):
+def is_int(value):
     try:
-        int(n)
+        int(value)
         return True
     except ValueError:
         return False
 
 
-def is_float(n):
+def is_float(value):
     try:
-        float(n)
-        return not is_int(n)
+        float(value)
+        return not is_int(value)
     except ValueError:
         return False
 
 
-def cast_str_to_num(value):
+def is_bool(value):
+    return value.upper() in ['TRUE', 'FALSE']
+
+
+def cast_str(value):
     if is_int(value):
         return int(value)
     if is_float(value):
         return float(value)
+    if is_bool(value):
+        return bool(value)
     return value
 
 
@@ -249,7 +256,7 @@ def read_opts(filename=get_opts_filename()):
         for values in reader:
             opt = {}
             for i, field in enumerate(header):
-                opt[field] = cast_str_to_num(values[i])
+                opt[field] = cast_str(values[i])
             opt_list += [opt]
     return opt_list
 
@@ -263,14 +270,16 @@ def reset_job_status(opts_list):
 def create_opts():
     # TODO add your enumeration of parameters here
     param1 = [float(p1) for p1 in range(10)]
+    param2 = [True, False]
 
-    args_list = [param1]
+    args_list = [param1, param2]
 
     opt_list = []
     for i, args in enumerate(itertools.product(*args_list)):
         opt_job = {'job_id': int(i), 'status': 'open'}
         opt_args = {
             'param1': args[0],
+            'param2': args[1]
         }
         # TODO add your result metric here
         opt_result = {'metric': 0.0}
