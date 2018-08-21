@@ -23,10 +23,10 @@ def train(opt_override, output_dir, logger, return_dict):
     # args
     parser = argparse.ArgumentParser()
     parser.add_argument('--exp_id', default='exp_id')
-    parser.add_argument('--seed', type=int, default=1, help='manual seed')
-    parser.add_argument('--device', type=int, default=0, metavar='S', help='device id (default: 0)')
+    parser.add_argument('--seed', type=int, default=1, help='manual seed, default=%(default)s')
+    parser.add_argument('--device', type=int, default=0, metavar='S', help='device id, default=%(default)s')
 
-    parser.add_argument('--param1', type=float, default=1.0, help='parameter 1, default=1.0')
+    parser.add_argument('--param1', type=float, default=1.0, help='parameter 1, default=%(default)s')
 
     # preamble
     opt = parser.parse_args()
