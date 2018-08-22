@@ -71,8 +71,7 @@ def set_cudnn():
 
 
 def set_gpu(device):
-    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-    os.environ['CUDA_VISIBLE_DEVICES'] = str(device)
+    torch.cuda.set_device(device)
 
 
 def overwrite_opt(opt, opt_override):
