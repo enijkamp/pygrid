@@ -132,25 +132,34 @@ def free_device(device):
         free_devices_lock.release()
 
 
+run_job_lock = threading.Lock()
+
+
 def run_job(logger, opt, output_dir):
+
     update_job_status(opt['job_id'], 'running')
     device_id = allocate_device()
     opt_override = {'device': device_id}
     opt = {**opt, **opt_override}
     logger.info('new job: job_id={}, device_id={}'.format(opt['job_id'], opt['device']))
     try:
-        output_dir_thread = os.path.join(output_dir, str(opt['job_id']))
-        if not os.path.exists(output_dir_thread):
-            os.mkdir(output_dir_thread)
-        copy_source(__file__, output_dir_thread)
-        logger_thread = setup_logging('job{}'.format(opt['job_id']), output_dir_thread, console=False)
-
         logger.info("spawning process: job_id={}, device_id={}".format(opt['job_id'], opt['device']))
 
-        manager = multiprocessing.Manager()
-        return_dict = manager.dict()
-        p = multiprocessing.Process(target=train, args=(opt, output_dir_thread, logger_thread, return_dict))
-        p.start()
+        try:
+            output_dir_thread = os.path.join(output_dir, str(opt['job_id']))
+            if not os.path.exists(output_dir_thread):
+                os.mkdir(output_dir_thread)
+            copy_source(__file__, output_dir_thread)
+            logger_thread = setup_logging('job{}'.format(opt['job_id']), output_dir_thread, console=False)
+
+            run_job_lock.acquire()
+            manager = multiprocessing.Manager()
+            return_dict = manager.dict()
+            p = multiprocessing.Process(target=train, args=(opt, output_dir_thread, logger_thread, return_dict))
+            p.start()
+        finally:
+            run_job_lock.release()
+
         p.join()
 
         logger.info('finished process: job_id={}, device_id={}'.format(opt['job_id'], opt['device']))
