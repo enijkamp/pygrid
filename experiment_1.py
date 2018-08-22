@@ -33,7 +33,7 @@ def train(opt_override, output_dir, logger, return_dict):
     opt = parser.parse_args()
     opt = overwrite_opt(opt, opt_override)
     if torch.cuda.is_available():
-        logger.info('setting cuda device to id {} (total of of {} cuda devices)'.format(torch.cuda.current_device(), torch.cuda.device_count()))
+        logger.info('setting cuda device to id {} (total of {} cuda devices)'.format(torch.cuda.current_device(), torch.cuda.device_count()))
     set_cudnn()
     set_gpu(opt.device)
     device = get_device(opt.device)
