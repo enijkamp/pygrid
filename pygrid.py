@@ -1,13 +1,10 @@
 import os
-import random
 
 import shutil
 import datetime
 import logging
 import sys
-import argparse
 import csv
-import itertools
 
 import queue
 import threading
@@ -18,55 +15,6 @@ import torch
 import torch.utils.data
 
 
-def train(opt_override, output_dir, logger, return_dict):
-
-    # args
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--exp_id', default='exp_id')
-    parser.add_argument('--seed', type=int, default=1, help='manual seed, default=%(default)s')
-    parser.add_argument('--device', type=int, default=0, metavar='S', help='device id, default=%(default)s')
-
-    parser.add_argument('--param1', type=float, default=1.0, help='parameter 1, default=%(default)s')
-    parser.add_argument('--param2', type=bool, default=True, help='parameter 2, default=%(default)s')
-
-    # preamble
-    opt = parser.parse_args()
-    opt = overwrite_opt(opt, opt_override)
-    if torch.cuda.is_available():
-        logger.info('setting cuda device to id {} (total of {} cuda devices)'.format(torch.cuda.current_device(), torch.cuda.device_count()))
-    set_cudnn()
-    set_gpu(opt.device)
-    device = get_device(opt.device)
-    opt.seed = set_seed(opt.seed)
-    logger.info(opt)
-
-    # run
-    # TODO add your training loop here
-    with open(os.path.join(output_dir, 'result.txt'), 'w') as f:
-        print('param1={}, param2={}'.format(opt.param1, opt.param2), file=f)
-
-    x = torch.tensor(opt.param1, requires_grad=True).to(device)
-    metric = torch.autograd.grad(torch.sin(x), x)[0].item()
-
-    # return
-    return_dict['stats'] = {'metric': metric}
-    logger.info('done')
-
-
-def get_device(device):
-    return 'cuda:{}'.format(device) if torch.cuda.is_available() else 'cpu'
-
-
-def set_seed(seed):
-    if seed is None:
-        seed = random.randint(1, 10000)
-    random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-    return seed
-
-
 def set_cudnn():
     if torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
@@ -74,12 +22,6 @@ def set_cudnn():
 
 def set_gpu(device):
     torch.cuda.set_device(device)
-
-
-def overwrite_opt(opt, opt_override):
-    for (k, v) in opt_override.items():
-        setattr(opt, k, v)
-    return opt
 
 
 def copy_source(file, output_dir):
@@ -134,12 +76,41 @@ def free_device(device):
         free_devices_lock.release()
 
 
+job_file_lock = threading.Lock()
+
+
+def update_job_status(job_id, job_status, read_opts, write_opts):
+    try:
+        job_file_lock.acquire()
+
+        opts = read_opts()
+        opt = next(opt for opt in opts if opt['job_id'] == job_id)
+        opt['status'] = job_status
+        write_opts(opts)
+    except Exception:
+        logging.exception('exception in update_job_status()')
+    finally:
+        job_file_lock.release()
+
+
+def update_job_result_file(update_job_result, job_opt, job_stats, read_opts, write_opts):
+    try:
+        job_file_lock.acquire()
+
+        opts = read_opts()
+        target_opt = next(opt for opt in opts if opt['job_id'] == job_opt['job_id'])
+        update_job_result(target_opt, job_stats)
+
+        write_opts(opts)
+    finally:
+        job_file_lock.release()
+
+
 run_job_lock = threading.Lock()
 
 
-def run_job(logger, opt, output_dir):
+def run_job(logger, opt, output_dir, train):
 
-    update_job_status(opt['job_id'], 'running')
     device_id = allocate_device()
     opt_override = {'device': device_id}
     opt = {**opt, **opt_override}
@@ -171,24 +142,8 @@ def run_job(logger, opt, output_dir):
         free_device(device_id)
 
 
-job_file_lock = threading.Lock()
-
-
-def update_job_status(job_id, job_status):
-    try:
-        job_file_lock.acquire()
-
-        opts = read_opts()
-        opt = next(opt for opt in opts if opt['job_id'] == job_id)
-        opt['status'] = job_status
-        write_opts(opts)
-    except Exception:
-        logging.exception('exception in update_job_status()')
-    finally:
-        job_file_lock.release()
-
-
-def run_jobs(logger, exp_id, opt_list, output_dir, workers):
+def run_jobs(logger, exp_id, output_dir, workers, train_job, read_opts, write_opts, update_job_result):
+    opt_list = read_opts()
     opt_open = [opt for opt in opt_list if opt['status'] == 'open']
     logger.info('scheduling {} open of {} total jobs'.format(len(opt_open), len(opt_list)))
     logger.info('starting thread pool with {} workers'.format(workers))
@@ -197,18 +152,22 @@ def run_jobs(logger, exp_id, opt_list, output_dir, workers):
             opt_override = {'exp_id': '{}_{}'.format(exp_id, opt['job_id'])}
             return {**opt, **opt_override}
 
-        futures = {executor.submit(run_job, logger, adjust_opt(opt), output_dir): opt for opt in opt_open}
+        def do_run_job(opt):
+            update_job_status(opt['job_id'], 'running', read_opts, write_opts)
+            return run_job(logger, adjust_opt(opt), output_dir, train_job)
+
+        futures = {executor.submit(do_run_job, opt): opt for opt in opt_open}
 
         for future in concurrent.futures.as_completed(futures):
             opt = futures[future]
             try:
                 stats = future.result()
                 logger.info('finished job future: job_id={}'.format(opt['job_id']))
-                update_job_result(opt, stats)
-                update_job_status(opt['job_id'], 'finished')
+                update_job_result_file(update_job_result, opt, stats, read_opts, write_opts)
+                update_job_status(opt['job_id'], 'finished', read_opts, write_opts)
             except Exception:
                 logger.exception('exception in run_jobs()')
-                update_job_status(opt['job_id'], 'fail')
+                update_job_status(opt['job_id'], 'fail', read_opts, write_opts)
 
 
 def is_int(value):
@@ -241,15 +200,17 @@ def cast_str(value):
     return value
 
 
-def get_exp_id():
-    return os.path.splitext(os.path.basename(__file__))[0]
+def get_exp_id(file):
+    return os.path.splitext(os.path.basename(file))[0]
 
 
-def get_opts_filename():
-    return '{}.csv'.format(get_exp_id())
+def overwrite_opt(opt, opt_override):
+    for (k, v) in opt_override.items():
+        setattr(opt, k, v)
+    return opt
 
 
-def write_opts(opt_list, filename=get_opts_filename()):
+def write_opts(opt_list, filename):
     with open(filename, 'w', newline='') as f:
         writer = csv.writer(f, delimiter=';')
         header = [key for key in opt_list[0]]
@@ -258,7 +219,7 @@ def write_opts(opt_list, filename=get_opts_filename()):
             writer.writerow([opt[k] for k in header])
 
 
-def read_opts(filename=get_opts_filename()):
+def read_opts(filename):
     opt_list = []
     with open(filename, newline='') as f:
         reader = csv.reader(f, delimiter=';')
@@ -276,59 +237,3 @@ def reset_job_status(opts_list):
         if opt['status'] == 'running':
             opt['status'] = 'open'
     return opts_list
-
-
-def create_opts():
-    # TODO add your enumeration of parameters here
-    param1 = [float(p1) for p1 in range(10)]
-    param2 = [True, False]
-
-    args_list = [param1, param2]
-
-    opt_list = []
-    for i, args in enumerate(itertools.product(*args_list)):
-        opt_job = {'job_id': int(i), 'status': 'open'}
-        opt_args = {
-            'param1': args[0],
-            'param2': args[1]
-        }
-        # TODO add your result metric here
-        opt_result = {'metric': 0.0}
-        opt_list += [{**opt_job, **opt_args, **opt_result}]
-    write_opts(opt_list)
-
-
-def update_job_result(job_opt, job_stats):
-    try:
-        job_file_lock.acquire()
-
-        opts = read_opts()
-        opt = next(opt for opt in opts if opt['job_id'] == job_opt['job_id'])
-
-        # TODO add your result metric here
-        opt['metric'] = job_stats['metric']
-
-        write_opts(opts)
-    finally:
-        job_file_lock.release()
-
-
-def main(device_ids):
-    fill_queue(device_ids)
-    output_dir = get_output_dir(get_exp_id())
-    if not os.path.exists(get_opts_filename()):
-        create_opts()
-    logger = setup_logging('main', output_dir, console=True)
-    logger.info('available devices {}'.format(device_ids))
-    opt_list = read_opts(get_opts_filename())
-    write_opts(reset_job_status(opt_list))
-    run_jobs(logger, get_exp_id(), opt_list, output_dir, workers=len(device_ids))
-    shutil.copyfile(get_opts_filename(), os.path.join(output_dir, get_opts_filename()))
-    logger.info('done')
-
-
-if __name__ == '__main__':
-    # TODO enumerate gpu or cpu devices here
-    #cpu_ids = [cpu for cpu in range(32)]
-    gpu_ids = [gpu for gpu in range(1)]
-    main(gpu_ids)

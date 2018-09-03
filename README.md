@@ -13,7 +13,6 @@ features:
 * multi-processing: distributes isolated pytorch processes among gpus / cpus
 * timestamps: isolates jobs in timestamped output directories
 * logging: isolates logging facility per job
-* single-file: self-contained within a single file for reproducibility
 
 setup:
 1. fill in TODOs with your training code and list of parameters
