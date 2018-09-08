@@ -42,6 +42,7 @@ def train(opt_override, output_dir, logger, return_dict):
     metric = torch.autograd.grad(torch.sin(x), x)[0].item()
 
     # return
+    # TODO return your results here
     return_dict['stats'] = {'metric': metric}
     logger.info('done')
 
