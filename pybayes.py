@@ -133,15 +133,17 @@ def maximize(f, points, n_iter, acq, gp, callback, random_state=np.random.Random
 
         y = f(x_max)
         points.append(x_max, y)
-        callback(i, points.keys, x_max, y)
         gp.fit(points.X, points.Y)
 
         result['max'] = points.max_point()
         result['all']['values'].append(y)
         result['all']['params'].append(dict(zip(points.keys, x_max)))
 
-        if points.Y[-1] > y_max:
+        new_max = points.Y[-1] > y_max
+        if new_max:
             y_max = points.Y[-1]
+
+        callback(i, points.keys, x_max, y, new_max)
 
     return result
 
@@ -202,7 +204,7 @@ def print_header(logger, params):
     logger.info(log_str)
 
 
-def print_step(logger, iter, params, x, y):
+def print_step(logger, iter, params, x, y, new_max):
     params = sort_params(params)
     sizes = get_sizes(params)
 
@@ -210,11 +212,13 @@ def print_step(logger, iter, params, x, y):
     log_str += (' {: >10.5f}'.format(y))
     for x_i, size in zip(x, sizes):
         log_str += (' {0: >{1}.{2}f}'.format(x_i, size + 2, min(size - 3, 6 - 2)))
+    if new_max:
+        log_str += ' (max)'
     logger.info(log_str)
 
 
 def create_print_step(logger):
-    return lambda i, params, x, y: print_step(logger, i, params, x, y)
+    return lambda *args: print_step(logger, *args)
 
 
 def create_console_logger():
